@@ -1,0 +1,6 @@
+/vendor/
+/.env
+/storage/log/*
+!/storage/log/.gitkeep
+/.phpunit.cache/
+/deploy/ir1server/.env

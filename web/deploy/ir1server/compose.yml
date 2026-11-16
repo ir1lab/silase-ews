@@ -1,0 +1,49 @@
+# SILASE-EWS Web di ir1server. Basis data memakai kontainer `mariadb` yang sudah
+# ada di network docker `web` (database dan pengguna `silase`, dibuat pasang.sh).
+#
+# Dijalankan dari folder ini di host (bukan dari dalam code-server):
+#   cd /srv/projects/nextjs/silase/web/deploy/ir1server
+#   bash pasang.sh                              # pemasangan pertama dan tiap pembaruan
+#   docker compose --profile ingest up -d       # worker MQTT, setelah akun broker diisi
+name: silase
+
+services:
+  web:
+    build: ../..
+    image: silase-web:prod
+    container_name: silase-web
+    env_file: .env
+    networks: [web]
+    # Hanya jaringan lokal: aplikasi belum punya login, jadi jangan dibuatkan
+    # hostname publik di Cloudflare Tunnel sebelum tahap (d) selesai.
+    ports:
+      - "${SILASE_PORT:-8088}:8080"
+    volumes:
+      - silase-log:/app/storage/log
+      - silase-caddy:/data/caddy
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    restart: unless-stopped
+
+  ingest:
+    image: silase-web:prod
+    container_name: silase-ingest
+    profiles: ["ingest"]
+    env_file: .env
+    command: ["php", "bin/worker-ingest.php"]
+    networks: [web]
+    volumes:
+      - silase-log:/app/storage/log
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    restart: unless-stopped
+
+volumes:
+  silase-log:
+  silase-caddy:
+
+networks:
+  web:
+    external: true

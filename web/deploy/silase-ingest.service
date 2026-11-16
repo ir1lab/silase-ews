@@ -1,0 +1,18 @@
+# Worker ingest SILASE-EWS. Sesuaikan User dan WorkingDirectory, lalu:
+#   sudo cp deploy/silase-ingest.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now silase-ingest
+#   journalctl -u silase-ingest -f
+[Unit]
+Description=SILASE-EWS worker ingest MQTT
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=www-data
+WorkingDirectory=/srv/projects/nextjs/silase/web
+ExecStart=/usr/bin/php bin/worker-ingest.php
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
