@@ -9,13 +9,15 @@ use Psr\Http\Message\ResponseInterface;
 /** Templat PHP polos dengan satu kerangka halaman. */
 final class Tampilan
 {
-    public function __construct(private string $dir)
+    /** @param (\Closure(): array<string, mixed>)|null $umum data yang dipakai kerangka di semua halaman */
+    public function __construct(private string $dir, private ?\Closure $umum = null)
     {
     }
 
     /** @param array<string, mixed> $data */
     public function halaman(ResponseInterface $respons, string $templat, array $data, int $kode = 200): ResponseInterface
     {
+        $data += $this->umum ? ($this->umum)() : [];
         $isi = $this->potong($templat, $data);
         $html = $this->potong('kerangka', $data + ['isi' => $isi]);
         $respons->getBody()->write($html);

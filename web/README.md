@@ -4,12 +4,14 @@ Dasbor web untuk node SILASE-EWS: menerima data lewat MQTT, menyimpannya, lalu
 menampilkan kondisi fermentasi per drum. Format data mengikuti firmware v1.0
 (`../src`, `../include`); web tidak mengubah firmware.
 
-**Status: tahap (b) dari 4.** Yang sudah ada: skema basis data, worker ingest,
-simulator node, halaman ringkasan dan detail drum, dan uji otomatis. Peringatan
-WhatsApp menyusul di tahap (c); siklus, perintah, ekspor, dan login di tahap (d).
+**Status: tahap (c) dari 4.** Yang sudah ada: skema basis data, worker ingest,
+simulator node, halaman ringkasan dan detail drum, peringatan dengan tombol
+"akui", notifikasi WhatsApp, dan uji otomatis. Siklus, perintah, ekspor, dan
+login menyusul di tahap (d).
 
-Halaman web belum memakai login (baru ada di tahap d). Sebelum itu, jangan
-buka ke internet tanpa pembatasan akses.
+Halaman web belum memakai login (baru ada di tahap d). Siapa pun di jaringan
+lokal bisa mengakui peringatan dan mengubah penerima WhatsApp. Sebelum login
+ada, jangan buka ke internet tanpa pembatasan akses.
 
 ## Kebutuhan
 
@@ -151,7 +153,8 @@ ulang dengan `bash bin/bangun-css.sh` (butuh Node di mesin pengembang).
 ## Deploy ke ir1server
 
 Aplikasi berjalan sebagai stack Docker `silase`: kontainer `silase-web`
-(FrankenPHP, port 8088) dan worker `silase-ingest`. Basis datanya memakai
+(FrankenPHP, port 8088), worker `silase-ingest`, worker `silase-notifikasi`, dan
+gateway WhatsApp `silase-waha` (opsional). Basis datanya memakai
 kontainer `mariadb` yang sudah ada di network docker `web`. Berkasnya ada di
 `deploy/ir1server/`.
 
@@ -163,7 +166,8 @@ bash pasang.sh
 ```
 
 `pasang.sh` dipakai untuk pemasangan pertama maupun tiap pembaruan kode, dan
-aman diulang. Skrip itu membuat `.env` dengan kata sandi basis data acak,
+aman diulang. Pengaturan baru yang belum ada di `.env` ditambahkan otomatis
+tanpa mengubah nilai yang sudah diisi. Skrip itu membuat `.env` dengan kata sandi basis data acak,
 membuat basis data dan pengguna `silase`, membangun image, memasang skema, lalu
 memeriksa bahwa halaman ringkasan menjawab. Bila satu langkah gagal, skrip
 berhenti dengan pesan `GAGAL: ...`.
@@ -181,6 +185,79 @@ docker compose logs -f ingest
 
 Untuk mencabut: `docker compose --profile ingest down -v`. Basis data `silase`
 di kontainer `mariadb` tidak ikut terhapus.
+
+## Peringatan
+
+Firmware menentukan level (NORMAL, WASPADA, BAHAYA); web hanya mencatat
+perubahannya. Satu baris peringatan dibuat saat level berubah, bukan tiap
+pembacaan, dan ditutup saat level berubah lagi atau kembali NORMAL. Pembacaan
+lama yang datang tidak berurutan (sisa buffer offline) tidak mengubah peringatan.
+
+Halaman **Peringatan** (`/peringatan`) menampilkan yang sedang berlangsung dan
+riwayatnya. Tombol **Akui** menandai peringatan sudah diketahui dan menghentikan
+pengingat WhatsApp-nya.
+
+## Notifikasi WhatsApp
+
+Saat peringatan WASPADA atau BAHAYA dibuat, satu pesan diantrekan untuk tiap
+penerima aktif drum itu; saat drum pulih, kabar pulih diantrekan. Pengiriman
+dikerjakan `bin/worker-notifikasi.php`, proses yang terpisah dari worker ingest,
+sehingga gangguan WhatsApp tidak pernah menghentikan penerimaan data.
+
+Aturan pengiriman:
+
+- Tidak ada kiriman ulang selama level tidak berubah.
+- BAHAYA yang belum diakui diingatkan tiap 6 jam, paling banyak 3 kali.
+- Jeda acak 3 sampai 8 detik antarpesan, paling banyak 20 pesan per jam.
+- Pesan yang ditolak dicoba sampai 3 kali, lalu ditandai `gagal`.
+- Bila gateway terputus, pesan menunggu di antrean dan dikirim setelah
+  tersambung. Pesan yang sudah lebih dari 2 jam, atau yang peringatannya sudah
+  pulih, ditandai `kedaluwarsa` dan tidak dikirim.
+- Kabar pulih hanya dikirim ke penerima yang memang menerima peringatannya.
+- Kesehatan gateway dicek tiap 5 menit. Saat terputus, dasbor menampilkan
+  banner merah dan admin dikirimi email (bila `MAILER_DSN` dan `ADMIN_EMAIL` diisi).
+
+Peringatan tetap tercatat dan tampil di dasbor walaupun WhatsApp gagal atau
+belum dikonfigurasi. WhatsApp bukan satu-satunya jalur: buzzer dan LED pada
+node tetap jalur utama.
+
+Halaman **WhatsApp** (`/whatsapp`) berisi status sambungan, kode QR, penerima
+per drum, tombol pesan uji, dan antrean pesan terakhir. Pesan hanya dikirim ke
+nomor yang terdaftar sebagai penerima.
+
+### Provider
+
+Dipilih lewat `WA_PROVIDER` di `.env`:
+
+| Nilai | Dipakai untuk | Yang diisi |
+|---|---|---|
+| `gateway` | tahap awal: WAHA yang di-hosting sendiri, pesan teks biasa | `WA_GATEWAY_URL`, `WA_GATEWAY_KEY` |
+| `cloud_api` | setelah layanan stabil: WhatsApp Cloud API resmi (Meta), pesan template | `WA_CLOUD_TOKEN`, `WA_CLOUD_PHONE_ID`, `WA_CLOUD_TEMPLATE` |
+
+Isi pesan kedua provider memakai lima parameter dengan urutan yang sama: nama
+drum, level, ΔT, alasan, waktu. Template Cloud API perlu lima variabel badan
+dalam urutan itu. Jalur `cloud_api` baru diuji dengan uji unit, belum dengan
+akun Meta sungguhan.
+
+### Mengaktifkan gateway di ir1server
+
+Pakai nomor WhatsApp khusus untuk SILASE, karena gateway ini tidak resmi.
+
+1. Di `deploy/ir1server/.env`, isi `WA_GATEWAY_URL=http://silase-waha:3000`.
+   `WA_GATEWAY_KEY` sudah diisi acak oleh `pasang.sh`.
+2. Nyalakan gateway dan muat ulang layanan yang memakainya:
+
+   ```bash
+   docker compose --profile wa up -d
+   docker compose up -d --force-recreate web notifikasi
+   ```
+
+3. Buka halaman WhatsApp di dasbor, lalu pindai kode QR dengan ponsel bernomor
+   khusus itu (WhatsApp → Perangkat tertaut → Tautkan perangkat).
+4. Tambahkan penerima per drum, lalu tekan **Kirim pesan uji**.
+
+Kontainer `silase-waha` tidak membuka port ke host: ia hanya bisa dipanggil dari
+network Docker `web` dan API-nya dilindungi `WA_GATEWAY_KEY`.
 
 ## Simulator (tanpa perangkat keras)
 
@@ -212,7 +289,9 @@ vendor/bin/phpunit
 Uji memakai SQLite di memori yang dibangun dari `sql/schema.sql`, tanpa broker.
 Yang dicakup: duplikat, data terlambat dan tidak berurutan, `ts = 0`, nilai
 `null`, payload rusak, status dan last will, kondisi tiap drum di halaman
-ringkasan, halaman detail, dan data grafik.
+ringkasan, halaman detail, data grafik, pencatatan peringatan, isi pesan,
+aturan antrean (pengingat, coba ulang, kedaluwarsa, batas laju), kedua provider
+WhatsApp dengan klien HTTP tiruan, dan form dengan token CSRF.
 
 Untuk menjalankan uji yang sama di MariaDB, arahkan `DB_*` ke basis data uji
 yang kosong (uji menghapus isi `readings` dan `devices`), lalu:
@@ -228,11 +307,13 @@ SILASE_UJI_MYSQL=1 vendor/bin/phpunit
 | `sql/schema.sql` | skema semua tabel |
 | `src/Ingest/` | validasi payload, penyimpanan, penyalur pesan per topik |
 | `src/Drum/` | kondisi drum, kueri, dan deret waktu untuk grafik |
+| `src/Peringatan/` | pencatatan peringatan saat level berubah |
+| `src/Notifikasi/` | isi pesan, antrean, pengirim, provider WhatsApp, email |
 | `src/Web/` | rute Slim, templat, dan format tampilan |
 | `src/WsMqttClient.php` | MQTT lewat WebSocket |
 | `src/Simulasi/` | penyusun payload seperti firmware |
 | `templates/`, `public/` | templat halaman, front controller, dan aset |
-| `bin/` | `migrasi.php`, `worker-ingest.php`, `simulasi.php`, `bangun-css.sh` |
+| `bin/` | `migrasi.php`, `worker-ingest.php`, `worker-notifikasi.php`, `simulasi.php`, `bangun-css.sh` |
 | `tests/` | uji PHPUnit |
 | `Dockerfile`, `deploy/ir1server/` | image dan stack Docker untuk ir1server |
 | `deploy/broker/buat-akun.sh` | pembuat akun broker (dijalankan di host broker) |
