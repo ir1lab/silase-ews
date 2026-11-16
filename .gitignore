@@ -1,0 +1,7 @@
+.pio/
+.vscode/
+build/
+*.bin
+*.elf
+# konfigurasi lokal berisi kredensial asli
+include/config.local.h
