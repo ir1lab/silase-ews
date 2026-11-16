@@ -4,14 +4,9 @@ Dasbor web untuk node SILASE-EWS: menerima data lewat MQTT, menyimpannya, lalu
 menampilkan kondisi fermentasi per drum. Format data mengikuti firmware v1.0
 (`../src`, `../include`); web tidak mengubah firmware.
 
-**Status: tahap (c) dari 4.** Yang sudah ada: skema basis data, worker ingest,
-simulator node, halaman ringkasan dan detail drum, peringatan dengan tombol
-"akui", notifikasi WhatsApp, dan uji otomatis. Siklus, perintah, ekspor, dan
-login menyusul di tahap (d).
-
-Halaman web belum memakai login (baru ada di tahap d). Siapa pun di jaringan
-lokal bisa mengakui peringatan dan mengubah penerima WhatsApp. Sebelum login
-ada, jangan buka ke internet tanpa pembatasan akses.
+**Status: keempat tahap selesai.** Skema basis data, worker ingest, simulator
+node, ringkasan dan detail drum, peringatan dan WhatsApp, siklus, perintah,
+ekspor CSV, login, dan kelola pengguna.
 
 ## Kebutuhan
 
@@ -172,8 +167,9 @@ membuat basis data dan pengguna `silase`, membangun image, memasang skema, lalu
 memeriksa bahwa halaman ringkasan menjawab. Bila satu langkah gagal, skrip
 berhenti dengan pesan `GAGAL: ...`.
 
-Web terbuka di `http://<IP ir1server>:8088` (port bisa diganti lewat `SILASE_PORT` di `.env`), hanya dari jaringan lokal. Jangan
-dibuatkan hostname publik di Cloudflare Tunnel sebelum login (tahap d) selesai.
+Web terbuka di `http://<IP ir1server>:8088` (port bisa diganti lewat
+`SILASE_PORT` di `.env`) dari jaringan lokal. Untuk dibuka dari luar dan untuk
+login Google, buatkan hostname di Cloudflare Tunnel (lihat "Menyiapkan login Google").
 
 Worker ingest tidak ikut menyala sampai akun broker diisi:
 
@@ -185,6 +181,66 @@ docker compose logs -f ingest
 
 Untuk mencabut: `docker compose --profile ingest down -v`. Basis data `silase`
 di kontainer `mariadb` tidak ikut terhapus.
+
+## Login dan peran
+
+Semua halaman butuh login. Ada dua cara login, dipilih lewat `.env`:
+
+- **Akun Google** (dianjurkan): aktif bila `APP_URL`, `GOOGLE_CLIENT_ID`, dan
+  `GOOGLE_CLIENT_SECRET` diisi. Login kata sandi lalu dimatikan.
+- **Kata sandi**: dipakai bila tiga nilai itu kosong, misalnya saat aplikasi
+  hanya dibuka lewat alamat IP di jaringan lokal.
+
+Google hanya membuktikan siapa orangnya. Yang boleh masuk tetap ditentukan
+daftar pengguna: alamat emailnya harus sudah didaftarkan admin dan masih aktif.
+
+| Peran | Boleh |
+|---|---|
+| Admin | semuanya, termasuk pengaturan WhatsApp dan kelola pengguna |
+| Operator | mengakui peringatan, mengubah data drum, mengelola siklus, mengirim perintah |
+| Peneliti | melihat dasbor, peringatan, siklus, dan mengekspor data |
+
+Sesi berlaku 12 jam. Pada login kata sandi, lima kali gagal berturut-turut
+mengunci email itu selama 15 menit. Harus selalu ada paling sedikit satu admin aktif.
+
+### Menyiapkan login Google
+
+Google hanya menerima alamat balik berupa nama domain HTTPS, tidak alamat IP,
+jadi aplikasi perlu hostname sendiri.
+
+1. **Hostname.** Di Cloudflare Zero Trust, pada tunnel `ir1server-tunnel`,
+   tambahkan public hostname (misalnya `silase.ir1lab.id`) dengan layanan
+   `http://silase-web:8080`.
+2. **OAuth client.** Di Google Cloud Console → APIs & Services → Credentials,
+   buat OAuth client ID jenis *Web application* dengan Authorized redirect URI
+   `https://silase.ir1lab.id/masuk/google/balik`.
+3. **`.env`.** Isi `APP_URL=https://silase.ir1lab.id`, `GOOGLE_CLIENT_ID`,
+   `GOOGLE_CLIENT_SECRET`, dan `ADMIN_EMAIL` (alamat akun Google admin pertama).
+4. Jalankan `bash pasang.sh`. Admin pertama didaftarkan dari `ADMIN_EMAIL`.
+
+Setelah itu aplikasi dibuka dari `APP_URL`; pengguna lain ditambahkan admin di
+halaman Pengguna dengan alamat email Google mereka.
+
+### Admin pertama dan pemulihan
+
+```bash
+docker compose exec web php bin/pengguna.php admin-awal nama@gmail.com   # hanya bila belum ada pengguna
+docker compose exec web php bin/pengguna.php sandi email@contoh.id       # kata sandi acak baru (login kata sandi)
+```
+
+## Siklus, perintah, dan ekspor
+
+- **Siklus** (`/siklus`): memulai siklus mengirim `start_cycle` ke node dan
+  mencatat siklusnya; baris siklus hanya dibuat bila perintah sampai ke broker.
+  Satu drum hanya boleh punya satu siklus berjalan. Menutup siklus mencatat hasil
+  akhir (baik atau rusak), pH, dan catatan organoleptik.
+- **Perintah** (`/perintah`): `sample_now` dan `mute`, dengan centang konfirmasi.
+  Semua perintah tercatat beserta pengirim, waktu, dan berhasil tidaknya.
+  Firmware tidak membalas, jadi "terkirim" berarti sampai di broker.
+- **Ekspor** (`/ekspor`): CSV per drum per rentang tanggal (hari WIB penuh) atau
+  per siklus. Pemisah koma, desimal titik, waktu dalam WIB dan UTC, sel kosong
+  untuk nilai yang tidak valid.
+- **Data drum**: nama, lokasi, dan catatan diubah dari halaman detail drum.
 
 ## Peringatan
 
@@ -221,7 +277,7 @@ Peringatan tetap tercatat dan tampil di dasbor walaupun WhatsApp gagal atau
 belum dikonfigurasi. WhatsApp bukan satu-satunya jalur: buzzer dan LED pada
 node tetap jalur utama.
 
-Halaman **WhatsApp** (`/whatsapp`) berisi status sambungan, kode QR, penerima
+Halaman **WhatsApp** (`/whatsapp`, khusus admin) berisi status sambungan, kode QR, penerima
 per drum, tombol pesan uji, dan antrean pesan terakhir. Pesan hanya dikirim ke
 nomor yang terdaftar sebagai penerima.
 
@@ -291,7 +347,9 @@ Yang dicakup: duplikat, data terlambat dan tidak berurutan, `ts = 0`, nilai
 `null`, payload rusak, status dan last will, kondisi tiap drum di halaman
 ringkasan, halaman detail, data grafik, pencatatan peringatan, isi pesan,
 aturan antrean (pengingat, coba ulang, kedaluwarsa, batas laju), kedua provider
-WhatsApp dengan klien HTTP tiruan, dan form dengan token CSRF.
+WhatsApp dengan klien HTTP tiruan, form dengan token CSRF, login kata sandi dan
+login Google (jawaban Google ditiru), hak akses tiap peran, siklus, perintah,
+dan isi berkas ekspor.
 
 Untuk menjalankan uji yang sama di MariaDB, arahkan `DB_*` ke basis data uji
 yang kosong (uji menghapus isi `readings` dan `devices`), lalu:
@@ -308,12 +366,14 @@ SILASE_UJI_MYSQL=1 vendor/bin/phpunit
 | `src/Ingest/` | validasi payload, penyimpanan, penyalur pesan per topik |
 | `src/Drum/` | kondisi drum, kueri, dan deret waktu untuk grafik |
 | `src/Peringatan/` | pencatatan peringatan saat level berubah |
+| `src/Masuk/`, `src/Pengguna/` | login Google dan daftar pengguna |
+| `src/Siklus/`, `src/Perintah/`, `src/Ekspor/` | siklus fermentasi, perintah ke node, ekspor CSV |
 | `src/Notifikasi/` | isi pesan, antrean, pengirim, provider WhatsApp, email |
 | `src/Web/` | rute Slim, templat, dan format tampilan |
 | `src/WsMqttClient.php` | MQTT lewat WebSocket |
 | `src/Simulasi/` | penyusun payload seperti firmware |
 | `templates/`, `public/` | templat halaman, front controller, dan aset |
-| `bin/` | `migrasi.php`, `worker-ingest.php`, `worker-notifikasi.php`, `simulasi.php`, `bangun-css.sh` |
+| `bin/` | `migrasi.php`, `worker-ingest.php`, `worker-notifikasi.php`, `pengguna.php`, `simulasi.php`, `bangun-css.sh` |
 | `tests/` | uji PHPUnit |
 | `Dockerfile`, `deploy/ir1server/` | image dan stack Docker untuk ir1server |
 | `deploy/broker/buat-akun.sh` | pembuat akun broker (dijalankan di host broker) |

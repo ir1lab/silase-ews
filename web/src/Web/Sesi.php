@@ -64,6 +64,65 @@ final class Sesi
         return is_array($kilat) ? $kilat : null;
     }
 
+    /** Menyimpan nilai sementara, mis. state login Google. */
+    public function taruh(string $kunci, mixed $nilai): void
+    {
+        $this->simpan('x_' . $kunci, $nilai);
+    }
+
+    /** Mengambil nilai sementara lalu menghapusnya (sekali pakai). */
+    public function ambilSekali(string $kunci): mixed
+    {
+        if (!$this->ada()) {
+            return null;
+        }
+        $nilai = $this->ambil('x_' . $kunci);
+        if ($nilai !== null) {
+            $this->simpan('x_' . $kunci, null);
+        }
+        return $nilai;
+    }
+
+    /** Mencatat pengguna yang masuk. ID sesi diganti untuk mencegah session fixation. */
+    public function masuk(int $idPengguna, int $kini): void
+    {
+        $this->mulai();
+        if ($this->php) {
+            session_regenerate_id(true);
+        }
+        $this->simpan('pengguna', $idPengguna);
+        $this->simpan('masuk_pada', $kini);
+        $this->simpan('csrf', bin2hex(random_bytes(32)));
+    }
+
+    public function keluar(): void
+    {
+        if (!$this->ada()) {
+            return;
+        }
+        $this->mulai();
+        if ($this->php) {
+            $_SESSION = [];
+            session_regenerate_id(true);
+        } else {
+            $this->memori = [];
+        }
+    }
+
+    /** @return int|null ID pengguna yang sedang masuk; null bila belum masuk atau sesi sudah lewat batas */
+    public function idPengguna(int $kini, int $umurMaks = 43200): ?int
+    {
+        if (!$this->ada()) {
+            return null;
+        }
+        $id = $this->ambil('pengguna');
+        $sejak = $this->ambil('masuk_pada');
+        if (!is_int($id) || !is_int($sejak) || $kini - $sejak > $umurMaks) {
+            return null;
+        }
+        return $id;
+    }
+
     /** Apakah pengunjung sudah punya sesi (tanpa membuat yang baru). */
     private function ada(): bool
     {

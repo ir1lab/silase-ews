@@ -52,17 +52,25 @@ docker compose up -d --build web
 echo "[4/5] Memasang skema"
 docker compose exec -T web php bin/migrasi.php || gagal "migrasi skema gagal"
 
+# Admin pertama dibuat sekali saja, saat belum ada pengguna. Dengan login Google,
+# alamatnya diambil dari ADMIN_EMAIL (alamat pertama); bila kosong, langkah ini
+# dilewati dan caranya ditampilkan.
+if ! docker compose exec -T web php bin/pengguna.php admin-awal; then
+  echo "      Admin pertama BELUM dibuat. Jalankan (ganti alamatnya dengan akun Google Anda):"
+  echo "        docker compose exec web php bin/pengguna.php admin-awal nama@gmail.com"
+fi
+
 # Worker notifikasi butuh skema yang sudah terpasang, jadi dinyalakan setelah migrasi.
 docker compose up -d --force-recreate notifikasi
 
 echo "[5/5] Memeriksa halaman"
 kode=000
 for _ in $(seq 1 15); do
-  kode="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$PORT/ || true)"
+  kode="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$PORT/masuk || true)"
   [ "$kode" = "200" ] && break
   sleep 2
 done
-[ "$kode" = "200" ] || gagal "halaman ringkasan menjawab HTTP $kode (lihat: docker compose logs web)"
+[ "$kode" = "200" ] || gagal "halaman masuk menjawab HTTP $kode (lihat: docker compose logs web)"
 
 # Worker ingest ikut diperbarui bila sudah pernah dinyalakan.
 if [ -n "$(docker ps -q -f name='^silase-ingest$')" ]; then
@@ -70,7 +78,12 @@ if [ -n "$(docker ps -q -f name='^silase-ingest$')" ]; then
 fi
 
 echo
-echo "BERHASIL. Web: http://$(hostname -I | awk '{print $1}'):$PORT  (jaringan lokal saja)"
+URL_APLIKASI="$(sed -n 's/^APP_URL=//p' .env)"
+if [ -n "$URL_APLIKASI" ] && [ -n "$(sed -n 's/^GOOGLE_CLIENT_ID=//p' .env)" ]; then
+  echo "BERHASIL. Web: $URL_APLIKASI  (login dengan akun Google)"
+else
+  echo "BERHASIL. Web: http://$(hostname -I | awk '{print $1}'):$PORT  (jaringan lokal, login kata sandi)"
+fi
 docker compose --profile ingest --profile wa ps --format 'table {{.Service}}\t{{.Status}}'
 if [ -z "$(sed -n 's/^MQTT_PASS=//p' .env)" ]; then
   echo "Worker MQTT belum dinyalakan: isi MQTT_USER dan MQTT_PASS di $(pwd)/.env, lalu"

@@ -11,9 +11,12 @@ use Silase\Db;
 use Silase\Drum\Deret;
 use Silase\Ingest\Ingestor;
 use Silase\Mqtt;
+use Silase\Pengaturan;
+use Silase\Pengguna\PenggunaRepo;
 use Silase\Simulasi\PembuatPayload as P;
 use Silase\Web\Aplikasi;
 use Silase\Web\Format;
+use Silase\Web\Sesi;
 use Slim\Psr7\Factory\ServerRequestFactory;
 
 /** Uji halaman ringkasan, detail drum, dan data grafik dengan SQLite di memori. */
@@ -24,9 +27,15 @@ final class WebTest extends TestCase
     private PDO $pdo;
     private int $kini = self::KINI;
 
+    private Sesi $sesi;
+
     protected function setUp(): void
     {
         $this->pdo = Db::sqlite(':memory:', dirname(__DIR__) . '/sql/schema.sql');
+        // Semua halaman butuh login; uji tampilan memakai akun peneliti (hanya lihat).
+        $id = (new PenggunaRepo($this->pdo, new Pengaturan($this->pdo)))->buat('Peneliti Uji', 'peneliti@uji.test', 'peneliti', 'kata-sandi-uji', self::KINI);
+        $this->sesi = Sesi::memori();
+        $this->sesi->masuk($id, self::KINI);
     }
 
     /** Menyimpan satu pembacaan seolah diterima $umur detik yang lalu. */
@@ -43,7 +52,7 @@ final class WebTest extends TestCase
 
     private function get(string $url): ResponseInterface
     {
-        $app = Aplikasi::buat($this->pdo, fn (): int => $this->kini);
+        $app = Aplikasi::buat($this->pdo, fn (): int => $this->kini, false, null, $this->sesi);
         return $app->handle((new ServerRequestFactory())->createServerRequest('GET', $url));
     }
 
