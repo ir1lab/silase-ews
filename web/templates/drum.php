@@ -9,6 +9,8 @@ use Silase\Web\Format as F;
 /** @var list<string> $sensorGagal */
 /** @var string $rentang */
 /** @var list<array> $peringatan */
+/** @var ?array $siklusBerjalan */
+/** @var bool $bolehKelola */
 
 $id = rawurlencode($device['device_id']);
 $redup = $kondisi->segar() ? '' : 'opacity-50';
@@ -91,6 +93,35 @@ $nilai = [
   </p>
 <?php endif; ?>
 </section>
+
+<?php if ($siklusBerjalan !== null) : ?>
+<p class="mt-3 rounded-lg border border-stone-300 bg-white px-4 py-2.5 text-sm text-stone-700">
+  <span class="font-semibold">Siklus berjalan</span> sejak <?= F::e(F::wib($siklusBerjalan['mulai'])) ?>
+  · bahan pakan: <?= F::e($siklusBerjalan['bahan_pakan'] ?? 'belum diisi') ?>
+  · <a href="/siklus" class="underline">kelola siklus</a>
+</p>
+<?php endif; ?>
+
+<?php if ($bolehKelola) : ?>
+<details class="mt-3 rounded-lg border border-stone-300 bg-white">
+  <summary class="cursor-pointer px-4 py-2.5 text-sm font-semibold">Ubah nama, lokasi, dan catatan drum</summary>
+  <form method="post" action="/drum/<?= F::e($id) ?>/ubah" class="border-t border-stone-200 p-4">
+    <input type="hidden" name="csrf" value="<?= F::e($csrf) ?>">
+    <div class="grid gap-3 sm:grid-cols-2">
+      <label class="text-sm">Nama drum
+        <input name="nama" required maxlength="100" value="<?= F::e($device['nama']) ?>" autocomplete="off" class="mt-1 w-full rounded border border-stone-300 bg-white px-3 py-2 text-sm">
+      </label>
+      <label class="text-sm">Lokasi
+        <input name="lokasi" maxlength="100" value="<?= F::e($device['lokasi']) ?>" placeholder="Kandang A" autocomplete="off" class="mt-1 w-full rounded border border-stone-300 bg-white px-3 py-2 text-sm">
+      </label>
+    </div>
+    <label class="mt-3 block text-sm">Catatan
+      <textarea name="catatan" rows="2" maxlength="2000" class="mt-1 w-full rounded border border-stone-300 bg-white px-3 py-2 text-sm"><?= F::e($device['catatan']) ?></textarea>
+    </label>
+    <button class="mt-3 rounded bg-stone-800 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700">Simpan</button>
+  </form>
+</details>
+<?php endif; ?>
 
 <section class="mt-5">
   <div class="flex flex-wrap items-center justify-between gap-2">

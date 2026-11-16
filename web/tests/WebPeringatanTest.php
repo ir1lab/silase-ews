@@ -12,6 +12,7 @@ use Silase\Ingest\Ingestor;
 use Silase\Notifikasi\Pengirim;
 use Silase\Notifikasi\WhatsAppNotifier;
 use Silase\Pengaturan;
+use Silase\Pengguna\PenggunaRepo;
 use Silase\Simulasi\PembuatPayload as P;
 use Silase\Web\Aplikasi;
 use Silase\Web\Sesi;
@@ -30,6 +31,8 @@ final class WebPeringatanTest extends TestCase
     {
         $this->pdo = Db::sqlite(':memory:', dirname(__DIR__) . '/sql/schema.sql');
         $this->sesi = Sesi::memori();
+        $id = (new PenggunaRepo($this->pdo, new Pengaturan($this->pdo)))->buat('Admin Uji', 'admin@uji.test', 'admin', 'kata-sandi-uji', self::KINI);
+        $this->sesi->masuk($id, self::KINI);
     }
 
     private function baca(int $saat, float $dT, string $device = 'node-01'): void
@@ -73,7 +76,7 @@ final class WebPeringatanTest extends TestCase
         $this->assertSame(2, substr_count((string) $r->getBody(), '>Akui</button>'));
 
         // Lencana jumlah peringatan aktif tampil di menu semua halaman.
-        $this->assertMatchesRegularExpression('/Peringatan\s+2\s+WhatsApp/', $this->teks($this->minta('GET', '/')));
+        $this->assertMatchesRegularExpression('/Peringatan\s+2\s+Siklus/', $this->teks($this->minta('GET', '/')));
     }
 
     public function testAkuiPeringatan(): void
