@@ -1,0 +1,10 @@
+.env
+.git
+.phpunit.cache
+vendor
+tests
+phpunit.xml
+assets-src
+tailwind.config.js
+storage/log/*
+deploy
