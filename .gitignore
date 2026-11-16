@@ -5,3 +5,4 @@ build/
 *.elf
 # konfigurasi lokal berisi kredensial asli
 include/config.local.h
+arduino/silase_ews/config.local.h
