@@ -15,10 +15,20 @@
 
 #include <Arduino.h>
 
+// Nilai asli per node (WiFi, akun MQTT, DEVICE_ID) sebaiknya ditulis di berkas
+// config.local.h di folder yang sama; berkas itu tidak ikut masuk git.
+// Salin config.local.example.h menjadi config.local.h lalu isi. Nilai di sana
+// menggantikan nilai bawaan di bawah ini.
+#if __has_include("config.local.h")
+#include "config.local.h"
+#endif
+
 // ---------------------------------------------------------------- Identitas
 #define FW_NAME     "SILASE-EWS"
 #define FW_VERSION  "1.0.0"
+#ifndef DEVICE_ID
 #define DEVICE_ID   "node-01"          // unik per node, dipakai pada topik MQTT
+#endif
 
 // ---------------------------------------------------------------- Pin ESP32-C3 Super Mini
 // Pin strapping (GPIO2, GPIO8, GPIO9) sengaja tidak dipakai: GPIO8 = LED bawaan papan,
@@ -42,14 +52,27 @@ static const uint8_t DS_ADDR[4][8] = {
 #define DS_RESOLUTION_BITS 12
 
 // ---------------------------------------------------------------- Jaringan
+// ESP32-C3 hanya mendukung WiFi 2,4 GHz (WPA/WPA2).
+#ifndef WIFI_SSID
 #define WIFI_SSID      "ISI_SSID"
 #define WIFI_PASSWORD  "ISI_PASSWORD"
+#endif
 
+// Daya pancar WiFi. Antena papan ESP32-C3 Super Mini tidak cocok dengan daya
+// penuh: sambungan sering gagal walau SSID dan kata sandi benar. 8,5 dBm adalah
+// nilai yang umum dipakai untuk papan ini; naikkan (mis. WIFI_POWER_11dBm atau
+// WIFI_POWER_15dBm) hanya bila jarak ke router jauh dan sambungan tetap stabil.
+#ifndef WIFI_TX_POWER
+#define WIFI_TX_POWER  WIFI_POWER_8_5dBm
+#endif
+
+#ifndef MQTT_HOST
 #define MQTT_HOST      "broker.contoh.ac.id"
 #define MQTT_PORT      8883
 #define MQTT_USER      "ISI_USER"
 #define MQTT_PASSWORD  "ISI_PASSWORD"
 #define MQTT_USE_TLS   1               // 1 = TLS (port 8883), 0 = tanpa TLS (port 1883)
+#endif
 #define MQTT_TOPIC_ROOT "silase-ews"   // topik: silase-ews/<DEVICE_ID>/{data,status,cmd}
 
 // Sertifikat CA broker (format PEM) bila MQTT_USE_TLS = 1.
@@ -61,7 +84,10 @@ static const char MQTT_CA_CERT[] = "";
 
 // ---------------------------------------------------------------- Waktu
 #define SAMPLE_INTERVAL_MS   (5UL * 60UL * 1000UL)   // interval pengukuran 5 menit
-#define WIFI_TIMEOUT_MS      15000UL
+#define WIFI_TIMEOUT_MS      15000UL                 // batas tunggu WiFi saat boot
+#define RECONNECT_INTERVAL_MS 30000UL                // jeda antarpercobaan sambung ulang WiFi/MQTT
+#define MQTT_SOCKET_TIMEOUT_S 5                      // batas tunggu jawaban broker
+#define MQTT_BUFFER_BYTES    1024                    // buffer PubSubClient; harus lebih besar dari satu payload data
 
 // ---------------------------------------------------------------- Ambang EWS
 // Nilai awal dari literatur; dikalibrasi ulang pada uji lapangan.

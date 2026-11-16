@@ -30,13 +30,26 @@ Probe DS18B20 dipasang dengan catu 3,3 V, bukan mode parasit. Pin strapping ESP3
   - Alarm ΔT ditahan selama fase stabilisasi awal fermentasi.
   - Penurunan tajam CO₂ dibandingkan nilai maksimum siklus dibaca sebagai indikasi kebocoran udara.
 - **Umur siklus tidak hilang saat restart.** Umur siklus dan CO₂ maksimum disimpan di memori non-volatil.
-- **Konektivitas.** WiFi dengan penyambungan ulang otomatis, waktu dari NTP, dan MQTT dengan opsi TLS. Saat node terputus tidak wajar, *last will* otomatis mengirim status offline.
+- **Konektivitas.** WiFi dengan penyambungan ulang otomatis yang tidak menghentikan pengukuran dan alarm, waktu dari NTP, dan MQTT dengan opsi TLS. Daya pancar WiFi diturunkan agar papan ESP32-C3 Super Mini bisa tersambung dengan andal. Saat node terputus tidak wajar, *last will* otomatis mengirim status offline.
 - **Buffer offline.** Selama koneksi terputus, data disimpan ke LittleFS dan dikirim ulang otomatis setelah koneksi pulih.
 - **Alarm lokal non-blocking** lewat buzzer dan LED.
 
 ## Konfigurasi
 
-Semua parameter ada di `include/config.h`: identitas node, pin, WiFi, broker MQTT, interval pengukuran, ambang EWS, dan batas validasi.
+Semua parameter ada di `config.h`: identitas node, pin, WiFi, broker MQTT, interval pengukuran, ambang EWS, dan batas validasi. Berkas itu ada di `include/` (PlatformIO) dan `arduino/silase_ews/` (Arduino IDE); isi keduanya sama.
+
+Nilai yang berbeda per node dan bersifat rahasia (`DEVICE_ID`, WiFi, akun MQTT) ditulis di `config.local.h`, bukan di `config.h`:
+
+1. Salin `config.local.example.h` menjadi `config.local.h` di folder yang sama.
+2. Isi `DEVICE_ID`, `WIFI_SSID`, `WIFI_PASSWORD`, dan `MQTT_*`.
+
+`config.local.h` tidak ikut masuk git, jadi kata sandi tidak tersebar. Bila berkas itu tidak ada, nilai bawaan di `config.h` yang dipakai.
+
+Catatan jaringan:
+
+- ESP32-C3 hanya mendukung WiFi 2,4 GHz dengan WPA/WPA2.
+- Firmware memakai MQTT lewat TCP (port 1883, atau 8883 dengan TLS), bukan WebSocket.
+- Bila jarak ke router jauh dan sinyal lemah, daya pancar bisa dinaikkan lewat `WIFI_TX_POWER` di `config.h`. Bawaannya 8,5 dBm karena papan Super Mini sering gagal tersambung pada daya penuh.
 
 Isi juga alamat ROM DS18B20 di `DS_ADDR`. Cara mendapatkannya: nyalakan node dengan probe terpasang satu per satu, lalu catat alamat yang tercetak di Serial Monitor.
 
