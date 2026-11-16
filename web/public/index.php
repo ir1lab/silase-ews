@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Silase\Config;
 use Silase\Db;
+use Silase\Notifikasi\PabrikNotifier;
 use Silase\Web\Aplikasi;
 
 // Server bawaan PHP (php -S): berkas statis dilayani langsung.
@@ -17,4 +18,4 @@ if (PHP_SAPI === 'cli-server') {
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 Config::muat(dirname(__DIR__));
-Aplikasi::buat(Db::sambung(), null, Config::benar('APP_DEBUG'))->run();
+Aplikasi::buat(Db::sambung(), null, Config::benar('APP_DEBUG'), PabrikNotifier::dariEnv())->run();

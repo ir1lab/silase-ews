@@ -108,7 +108,8 @@ final class WebTest extends TestCase
 
         $this->assertStringContainsString('Sensor gagal: Probe tengah, SCD41 (CO₂ dan RH)', $t);
         $this->assertStringContainsString('titik terpanas: lapis atas', $t);
-        $this->assertStringContainsString('Belum ada peringatan untuk drum ini', $t);
+        $this->assertStringContainsString('WASPADA kenaikan suhu internal', $t);     // riwayat peringatan drum
+        $this->assertStringContainsString('masih berlangsung', $t);
         $this->assertMatchesRegularExpression('/Tengah\s+–\s*°C/', $t);            // null tampil sebagai tanda pisah
         $this->assertStringContainsString('data-url="/api/drum/node-01/deret?rentang=7h"', $html);
         $this->assertStringNotContainsString('<script>', $html);                    // CSP: tanpa skrip sebaris

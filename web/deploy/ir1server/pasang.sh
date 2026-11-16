@@ -15,6 +15,16 @@ if [ ! -f .env ]; then
   ( umask 077; sed "s|^DB_PASS=.*|DB_PASS=$(openssl rand -hex 20)|" env.example > .env )
   echo "      .env dibuat dengan kata sandi basis data acak"
 fi
+# Versi baru bisa membawa pengaturan baru: tambahkan yang belum ada di .env,
+# tanpa mengubah nilai yang sudah diisi.
+while IFS= read -r baris; do
+  kunci="${baris%%=*}"
+  grep -q "^${kunci}=" .env || { printf '%s\n' "$baris" >> .env; echo "      .env: menambahkan $kunci"; }
+done < <(grep -E '^[A-Z_]+=' env.example)
+if [ -z "$(sed -n 's/^WA_GATEWAY_KEY=//p' .env)" ]; then
+  sed -i "s|^WA_GATEWAY_KEY=.*|WA_GATEWAY_KEY=$(openssl rand -hex 24)|" .env
+  echo "      .env: kunci API gateway WhatsApp dibuat acak"
+fi
 DB_NAME="$(sed -n 's/^DB_NAME=//p' .env)"
 DB_USER="$(sed -n 's/^DB_USER=//p' .env)"
 DB_PASS="$(sed -n 's/^DB_PASS=//p' .env)"
@@ -36,11 +46,14 @@ ALTER USER '$DB_USER'@'%' IDENTIFIED BY '$DB_PASS';
 GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'%';
 SQL
 
-echo "[3/5] Membangun image dan menyalakan web"
+echo "[3/5] Membangun image dan menyalakan web serta worker notifikasi"
 docker compose up -d --build web
 
 echo "[4/5] Memasang skema"
 docker compose exec -T web php bin/migrasi.php || gagal "migrasi skema gagal"
+
+# Worker notifikasi butuh skema yang sudah terpasang, jadi dinyalakan setelah migrasi.
+docker compose up -d --force-recreate notifikasi
 
 echo "[5/5] Memeriksa halaman"
 kode=000
@@ -51,15 +64,18 @@ for _ in $(seq 1 15); do
 done
 [ "$kode" = "200" ] || gagal "halaman ringkasan menjawab HTTP $kode (lihat: docker compose logs web)"
 
-# Worker ikut diperbarui bila sudah pernah dinyalakan.
+# Worker ingest ikut diperbarui bila sudah pernah dinyalakan.
 if [ -n "$(docker ps -q -f name='^silase-ingest$')" ]; then
-  docker compose --profile ingest up -d ingest
+  docker compose --profile ingest up -d --force-recreate ingest
 fi
 
 echo
 echo "BERHASIL. Web: http://$(hostname -I | awk '{print $1}'):$PORT  (jaringan lokal saja)"
-docker compose --profile ingest ps --format 'table {{.Service}}\t{{.Status}}'
+docker compose --profile ingest --profile wa ps --format 'table {{.Service}}\t{{.Status}}'
 if [ -z "$(sed -n 's/^MQTT_PASS=//p' .env)" ]; then
   echo "Worker MQTT belum dinyalakan: isi MQTT_USER dan MQTT_PASS di $(pwd)/.env, lalu"
   echo "  docker compose --profile ingest up -d"
+fi
+if [ -z "$(sed -n 's/^WA_GATEWAY_URL=//p' .env)" ]; then
+  echo "WhatsApp belum diaktifkan: peringatan hanya tampil di dasbor. Cara mengaktifkan ada di README."
 fi

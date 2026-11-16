@@ -5,6 +5,7 @@
 #   cd /srv/projects/nextjs/silase/web/deploy/ir1server
 #   bash pasang.sh                              # pemasangan pertama dan tiap pembaruan
 #   docker compose --profile ingest up -d       # worker MQTT, setelah akun broker diisi
+#   docker compose --profile wa up -d           # gateway WhatsApp (WAHA), setelah WA_GATEWAY_URL diisi
 name: silase
 
 services:
@@ -40,9 +41,50 @@ services:
       options: { max-size: "10m", max-file: "3" }
     restart: unless-stopped
 
+  # Antrean WhatsApp, pengingat BAHAYA, dan pemantau gateway. Terpisah dari ingest
+  # supaya gangguan WhatsApp tidak pernah menghentikan penerimaan data.
+  notifikasi:
+    image: silase-web:prod
+    container_name: silase-notifikasi
+    env_file: .env
+    command: ["php", "bin/worker-notifikasi.php"]
+    networks: [web]
+    volumes:
+      - silase-log:/app/storage/log
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    restart: unless-stopped
+
+  # Gateway WhatsApp tidak resmi (WAHA Core, engine NOWEB tanpa browser, varian ARM64).
+  # Tanpa `ports:`: hanya bisa dipanggil dari network docker `web`, dan API-nya
+  # dilindungi WA_GATEWAY_KEY. Dasbor dan Swagger dimatikan; kode QR dan status
+  # ditampilkan halaman WhatsApp di SILASE sendiri. WAHA Core hanya punya satu
+  # sesi, jadi kontainer ini khusus untuk nomor WhatsApp SILASE.
+  waha:
+    image: devlikeapro/waha:noweb-arm-2026.10.1
+    container_name: silase-waha
+    profiles: ["wa"]
+    environment:
+      WHATSAPP_DEFAULT_ENGINE: NOWEB
+      WAHA_API_KEY: ${WA_GATEWAY_KEY:?isi WA_GATEWAY_KEY di .env}
+      WAHA_PRINT_QR: "false"
+      WHATSAPP_RESTART_ALL_SESSIONS: "true"
+      WAHA_DASHBOARD_ENABLED: "false"
+      WHATSAPP_SWAGGER_ENABLED: "false"
+      TZ: Asia/Jakarta
+    networks: [web]
+    volumes:
+      - silase-waha:/app/.sessions
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    restart: unless-stopped
+
 volumes:
   silase-log:
   silase-caddy:
+  silase-waha:
 
 networks:
   web:

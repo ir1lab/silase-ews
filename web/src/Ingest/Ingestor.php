@@ -6,6 +6,9 @@ namespace Silase\Ingest;
 
 use PDO;
 use PDOException;
+use Silase\Notifikasi\Antrean;
+use Silase\Notifikasi\PabrikNotifier;
+use Silase\Peringatan\PelacakPeringatan;
 
 /** Menyimpan pembacaan dan status node. Semua waktu disimpan dalam UTC. */
 final class Ingestor
@@ -16,8 +19,9 @@ final class Ingestor
     public const TOLERANSI_MASA_DEPAN_S = 86400;
 
     /** @param (\Closure(): int)|null $jam sumber waktu epoch, diganti pada uji */
-    public function __construct(private PDO $pdo, private ?\Closure $jam = null)
+    public function __construct(private PDO $pdo, private ?\Closure $jam = null, private ?PelacakPeringatan $pelacak = null)
     {
+        $this->pelacak ??= new PelacakPeringatan($pdo, new Antrean($pdo, PabrikNotifier::namaProvider()));
     }
 
     public function terimaData(string $deviceId, string $json): HasilIngest
@@ -50,6 +54,11 @@ final class Ingestor
             $this->pdo->prepare(
                 'UPDATE devices SET online = 1, last_seen = ?, fw = COALESCE(?, fw), last_ts = ? WHERE device_id = ?'
             )->execute([$b['received_at'], $b['fw'], max($lastTs, $b['ts']), $deviceId]);
+            // Hanya pembacaan terbaru yang boleh mengubah peringatan; sisa buffer
+            // yang datang tidak berurutan cukup disimpan.
+            if ($terbaru) {
+                $this->pelacak->proses($b, $kini);
+            }
             $this->pdo->commit();
         } catch (\Throwable $e) {
             if ($this->pdo->inTransaction()) {
